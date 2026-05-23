@@ -108,7 +108,10 @@ async def agent(state: State) -> dict[str, object]:
     conversation.append(HumanMessage(content=state.get("user_input", "")))
 
     # Sensitive tools that require human approval before execution
-    _sensitive_tools = {"send_email", "delete_data", "transfer_money", "send_message", "delete", "remove"}
+    _sensitive_tools = {"send_email", "delete_data", "transfer_money", "send_message", "delete", "remove", "code_executor"}
+
+    needs_approval = False
+    pending_tool_call = None
 
     # Invoke
     response = await llm_with_tools.ainvoke(
@@ -117,13 +120,24 @@ async def agent(state: State) -> dict[str, object]:
             *conversation,
         ]
     )
-
-    needs_approval = False
     if hasattr(response, "tool_calls") and response.tool_calls:
         for tc in response.tool_calls:
             name = tc.get("name") if isinstance(tc, dict) else getattr(tc, "name", "")
             if name in _sensitive_tools:
                 needs_approval = True
+                # Extract first sensitive tool call for HitL pending record
+                args = tc.get("args", {}) if isinstance(tc, dict) else getattr(tc, "args", {})
+                tool_call_id = tc.get("id", "") if isinstance(tc, dict) else getattr(tc, "id", "")
+                pending_tool_call = {"tool_name": name, "args": args, "tool_call_id": tool_call_id}
                 break
+
+    # Store pending approval in Redis if sensitive tool detected
+    if needs_approval and pending_tool_call:
+        from .hitl import store_pending
+        store_pending(state.get("session_id", ""), {
+            **pending_tool_call,
+            "user_input": state.get("user_input", ""),
+            "approved": None,
+        })
 
     return {"messages": [response], "needs_approval": needs_approval}

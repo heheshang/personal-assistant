@@ -284,7 +284,7 @@ async def handle_approval(session_id: str, req: ApprovalRequest):
     }
 
     try:
-        result = graph.invoke(
+        result = await graph.ainvoke(
             initial_state,
             config={"configurable": {"thread_id": session_id}},
         )

@@ -314,6 +314,122 @@ curl http://localhost:8000/openapi.json | jq .paths
 ["/chat", "/chat/stream", "/health", "/approvals/{session_id}"]
 ```
 
+## Human-in-the-Loop 审批流
+
+### 敏感工具
+
+`code_executor`（代码执行）等工具为敏感操作，触发前需要人工确认：
+
+```
+send_email, delete_data, transfer_money, send_message,
+delete, remove, code_executor
+```
+
+### 完整链路
+
+```
+┌──────────────────────────────────────────────────────────────────┐
+│ 第一次 /chat                                                   │
+│                                                                  │
+│  user_input: "帮我执行 print('hello')"                            │
+│       │                                                        │
+│       ▼                                                        │
+│  agent (检测到敏感工具 code_executor)                             │
+│       │                                                        │
+│       ▼                                                        │
+│  needs_approval=True → hitl_node                                │
+│       │                                                        │
+│       ▼                                                        │
+│  store_pending(approved=None) → Redis                            │
+│       │                                                        │
+│       ▼                                                        │
+│  暂停，返回给用户  ───────────────────────────────────────────────┘
+│
+│  用户调用 GET /approvals/{session_id}  查询待审批
+│  用户调用 POST /approvals/{session_id} action=approve/reject
+│
+└──────────────────────────────────────────────────────────────────┘
+                              │
+                              ▼
+┌──────────────────────────────────────────────────────────────────┐
+│ 第二次 /chat（approval_resume）                                   │
+│                                                                  │
+│  Redis approved=True → hitl_node 读取记录                        │
+│       │                                                        │
+│       ├── approved=True → _execute_tool() 执行工具              │
+│       │    → ToolMessage 注入 messages → agent → memory_save   │
+│       │                                                        │
+│       └── approved=False → 跳过工具 → memory_save → END          │
+└──────────────────────────────────────────────────────────────────┘
+```
+
+### 端到端测试（模拟）
+
+```bash
+# Session A：触发审批 → 查询 → 拒绝
+SESSION="hitl-001"
+
+# 1. /chat 触发审批（敏感工具）
+curl -X POST http://localhost:8000/chat \
+  -H "Content-Type: application/json" \
+  -d '{"message": "执行代码 print('hello')", "session_id": "hitl-001"}'
+# → needs_approval=True（图中暂停）
+
+# 2. 查询待审批
+curl http://localhost:8000/approvals/hitl-001
+# → {"tool_name":"code_executor","args":{"code":"print('hello')"},"tool_call_id":"...","user_input":"执行代码"}
+
+# 3. 拒绝
+curl -X POST http://localhost:8000/approvals/hitl-001 \
+  -H "Content-Type: application/json" \
+  -d '{"action": "reject"}'
+# → {"status":"rejected","message":"工具调用已被拒绝"}
+
+# 4. 第二次 /chat（hitl_node 处理拒绝）
+curl -X POST http://localhost:8000/chat \
+  -H "Content-Type: application/json" \
+  -d '{"message": "[approval_resume]", "session_id": "hitl-001"}'
+# → {"status":"rejected","message":"..."}
+```
+
+### approve 流程
+
+```bash
+SESSION="hitl-002"
+
+# 1. 触发审批
+curl -X POST http://localhost:8000/chat \
+  -H "Content-Type: application/json" \
+  -d '{"message": "用code_executor执行 print('hello world')", "session_id": "hitl-002"}'
+
+# 2. 查询
+curl http://localhost:8000/approvals/hitl-002
+# → {"tool_name":"code_executor","args":{"code":"print('hello world')"},...}
+
+# 3. 批准
+curl -X POST http://localhost:8000/approvals/hitl-002 \
+  -H "Content-Type: application/json" \
+  -d '{"action": "approve"}'
+# → {"status":"approved","message":"hello world"}
+
+# 4. 第二次 /chat（hitl_node 执行工具 → agent 合成 → memory_save）
+curl -X POST http://localhost:8000/chat \
+  -H "Content-Type: application/json" \
+  -d '{"message": "[approval_resume]", "session_id": "hitl-002"}'
+# → {"status":"approved","message":"代码执行结果: hello world"}
+```
+
+### 内部实现
+
+| 组件 | 文件 | 说明 |
+|------|------|------|
+| `store_pending` / `get_pending` | `src/hitl.py` | Redis 读写 pending 记录 |
+| `hitl_node` | `src/hitl.py` | 审批决策处理器（approve/reject/超时） |
+| `_execute_tool` | `src/hitl.py` | 工具执行（从工具列表匹配并调用） |
+| `_check_pending_start` | `src/hitl.py` | START 条件边，判断是否进入 hitl_node |
+| `needs_approval` | `src/nodes.py` | agent 检测到敏感工具时写入 Redis |
+| `POST /approvals/{id}` | `src/server.py` | 更新 Redis approved 字段，触发第二次 /chat |
+
 ## 测试
 
 ```bash

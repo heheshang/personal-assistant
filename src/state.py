@@ -26,6 +26,8 @@ class State(TypedDict):
     retrieved_docs: list[dict]
     # When True, triggers Human-in-the-Loop approval before tool execution
     needs_approval: bool
+    # Pending approval record — set by hitl_node, cleared after user decision
+    pending_approval: dict | None
     # Session identifier for checkpoint + memory isolation
     session_id: str
 

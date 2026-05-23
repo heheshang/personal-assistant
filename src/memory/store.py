@@ -67,27 +67,37 @@ def _store_vector(session_id: str, memory_id: str, vector: list[float], content:
     client.hset(vector_key, memory_id, json.dumps(vector_data))
 
 
-def save_memory(session_id: str, content: str) -> str:
+def save_memory(session_id: str, content: str, ai_response: str | None = None) -> str:
     """
     Save a memory for a session using Redis hash + OpenAI embeddings.
+
+    Stores both user input and optional AI response to form a complete dialogue
+    memory (问过+答过). createdAt is stored as Unix timestamp (int) for accurate
+    temporal filtering.
     """
+    import time
+
     client = _get_redis_client()
     memory_id = str(uuid.uuid4())
-    
+    created_at = int(time.time())
+
     # Get embedding for the content
     vector = _get_embedding(content)
-    
+
     # Store in Redis hash (session metadata)
     hash_key = f"{MEMORY_HASH_PREFIX}{session_id}"
     memory_data = {
         "id": memory_id,
-        "content": content
+        "content": content,
+        "createdAt": created_at,
     }
+    if ai_response:
+        memory_data["ai_response"] = ai_response
     client.hset(hash_key, memory_id, json.dumps(memory_data))
-    
+
     # Store vector separately for similarity search
     _store_vector(session_id, memory_id, vector, content)
-    
+
     return memory_id
 
 
@@ -157,7 +167,8 @@ def memory_save_node(state: State) -> dict:
     """
     LangGraph node: save session context to long-term memory after conversation.
 
-    Saves a summary of the user's question if input is non-trivial (>20 chars).
+    Saves both the user question and the last AI response to form a complete
+    dialogue memory (问过+答过). Input must be non-trivial (>20 chars).
     """
     session_id = state.get("session_id", "")
     user_input = state.get("user_input", "")
@@ -165,5 +176,23 @@ def memory_save_node(state: State) -> dict:
     if not session_id or len(user_input) < 20:
         return {}
 
-    memory_id = save_memory(session_id, f"用户问过：{user_input[:200]}")
+    # Extract the last AI response from messages
+    ai_response: str | None = None
+    messages: list = state.get("messages", [])
+    for msg in reversed(messages):
+        if hasattr(msg, "type") and msg.type == "ai":
+            ai_response = getattr(msg, "content", None) or ""
+            if isinstance(ai_response, list):
+                # Handle content blocks (e.g., text blocks)
+                ai_response = " ".join(
+                    b.text if hasattr(b, "text") else str(b)
+                    for b in ai_response
+                )
+            break
+
+    memory_id = save_memory(
+        session_id,
+        f"用户问过：{user_input[:200]}",
+        ai_response=ai_response,
+    )
     return {}  # memory_id is stored in Redis; no state field needed

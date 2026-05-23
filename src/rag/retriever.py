@@ -92,11 +92,13 @@ def build_system_prompt(state: State) -> str:
     return "".join(parts)
 
 
-async def rag_retrieve_node(state: State) -> dict:
+def rag_retrieve_node(state: State) -> dict:
     """
-    Async LangGraph node: retrieve RAG docs and write to state.
+    LangGraph node: retrieve RAG docs and write to state.
 
     Reads user_input from state, writes retrieved_docs (score > 0.7 only).
+    No async operations — wrapper is sync even though this may be called
+    inside an async context by LangGraph.
     """
     user_input = state.get("user_input", "")
 

@@ -120,8 +120,7 @@ class TestBuildSystemPrompt:
 class TestRAGNode:
     """Test the rag_retrieve_node LangGraph node."""
 
-    @pytest.mark.asyncio
-    async def test_rag_retrieve_node_writes_retrieved_docs(self):
+    def test_rag_retrieve_node_writes_retrieved_docs(self):
         """rag_retrieve_node should write retrieved_docs to state."""
         # Reset singleton before test
         retriever._vector_store = None
@@ -135,13 +134,14 @@ class TestRAGNode:
         ])
 
         with patch.object(retriever, "_get_vector_store", return_value=mock_store):
-            result = await retriever.rag_retrieve_node({
+            result = retriever.rag_retrieve_node({
                 "messages": [],
                 "user_input": "What is the API rate limit?",
                 "route_to": "rag",
                 "relevant_memories": [],
                 "retrieved_docs": [],
                 "needs_approval": False,
+                "pending_approval": None,
                 "session_id": "s1",
             })
             assert "retrieved_docs" in result

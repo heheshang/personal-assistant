@@ -49,6 +49,20 @@ class StreamChunk(BaseModel):
     node: str | None = None
 
 
+class ApprovalRequest(BaseModel):
+    """POST /approvals/{session_id} request body."""
+
+    action: str
+    """'approve' or 'reject'."""
+
+
+class ApprovalResponse(BaseModel):
+    """POST /approvals/{session_id} response body."""
+
+    status: str
+    message: str
+
+
 # ── FastAPI app ───────────────────────────────────────────────────────────────
 
 @asynccontextmanager
@@ -103,6 +117,7 @@ async def chat(req: ChatRequest) -> ChatResponse:
         "relevant_memories": [],
         "retrieved_docs": [],
         "needs_approval": False,
+        "pending_approval": None,
         "session_id": session_id,
     }
 
@@ -148,6 +163,7 @@ async def chat_stream(req: ChatRequest):
         "relevant_memories": [],
         "retrieved_docs": [],
         "needs_approval": False,
+        "pending_approval": None,
         "session_id": session_id,
     }
 
@@ -186,3 +202,94 @@ async def chat_stream(req: ChatRequest):
 async def health():
     """Liveness probe."""
     return {"status": "ok"}
+
+
+# ── HitL Approval Endpoints ───────────────────────────────────────────────────
+
+@app.get("/approvals/{session_id}", response_model=dict | None)
+async def get_approval(session_id: str):
+    """
+    Check if there is a pending approval for this session.
+
+    Returns the pending approval record from Redis, or None if none exists.
+    """
+    from .hitl import get_pending
+
+    record = get_pending(session_id)
+    if record is None:
+        return None
+    return {
+        "tool_name": record.get("tool_name"),
+        "args": record.get("args", {}),
+        "tool_call_id": record.get("tool_call_id"),
+        "user_input": record.get("user_input"),
+    }
+
+
+@app.post("/approvals/{session_id}", response_model=ApprovalResponse)
+async def handle_approval(session_id: str, req: ApprovalRequest):
+    """
+    Submit an approval or rejection decision for a pending tool call.
+
+    On approve: sets approved=True in Redis record, then calls /chat to resume.
+    On reject: sets approved=False, then calls /chat to cancel tool.
+    """
+    from .hitl import get_pending, store_pending
+
+    record = get_pending(session_id)
+    if record is None:
+        return ApprovalResponse(
+            status="error",
+            message=f"No pending approval for session {session_id}",
+        )
+
+    action = req.action.lower()
+    if action not in ("approve", "reject"):
+        return ApprovalResponse(
+            status="error",
+            message="action must be 'approve' or 'reject'",
+        )
+
+    # Update the approval record in Redis
+    record["approved"] = action == "approve"
+    store_pending(session_id, record)
+
+    # Now invoke /chat to continue the graph with the updated Redis state
+    from .hitl import get_pending as gp  # refresh after store_pending
+    from langchain_core.messages import HumanMessage
+
+    _ = gp(session_id)  # ensure fresh read
+
+    graph = get_graph()
+    initial_state: State = {
+        "messages": [HumanMessage(content="[approval_resume]")],
+        "user_input": "[approval_resume]",
+        "route_to": None,
+        "relevant_memories": [],
+        "retrieved_docs": [],
+        "needs_approval": False,
+        "pending_approval": None,
+        "session_id": session_id,
+    }
+
+    try:
+        result = graph.invoke(
+            initial_state,
+            config={"configurable": {"thread_id": session_id}},
+        )
+        messages: list = result.get("messages", [])
+        final_content = ""
+        for msg in reversed(messages):
+            content = msg.content if hasattr(msg, "content") else msg.get("content", "")
+            if content:
+                final_content = content
+                break
+        return ApprovalResponse(
+            status="approved" if action == "approve" else "rejected",
+            message=final_content,
+        )
+    except Exception as e:
+        return ApprovalResponse(
+            status="error",
+            message=f"Graph invocation failed: {e}",
+        )

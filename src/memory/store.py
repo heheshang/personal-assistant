@@ -3,6 +3,7 @@ Memory module using Redis for storage with OpenAI embeddings for vector search.
 """
 
 import json
+import os
 import uuid
 from typing import Annotated, Any, Optional
 
@@ -42,6 +43,9 @@ def _get_redis_client() -> redis.Redis:
 
 def _get_embedding(text: str) -> list[float]:
     """Get embedding vector for text using OpenAI embeddings."""
+    if os.getenv("SKIP_EMBEDDING", "").lower() in ("true", "1", "yes"):
+        # Return dummy zero vector when embedding is disabled
+        return [0.0] * EMBEDDING_DIMENSIONS
     global _openai_client
     if _openai_client is None:
         _openai_client = OpenAI(api_key=OPENAI_API_KEY)

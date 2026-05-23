@@ -84,17 +84,10 @@ async def agent(state: State) -> dict[str, object]:
     """
     # Deferred imports — only needed by agent, not router
     from .rag.retriever import build_system_prompt
-    from .tools import build_local_tool_node, build_mcp_tool_node, get_mcp_tools
-
-    # Ensure MCP tools are warmed up (sync accessor — returns cached list)
-    get_mcp_tools()
+    from .tools import get_local_tools, get_mcp_tools
 
     # Collect all available tools (local + mcp)
-    local_node = build_local_tool_node()
-    mcp_node = build_mcp_tool_node()
-
-    # Merge tool lists — each ToolNode exposes its tools; we union them
-    all_tools = local_node.tools + mcp_node.tools
+    all_tools = get_local_tools() + get_mcp_tools()
 
     # Build system prompt with memories + RAG docs
     system_message = build_system_prompt(state)

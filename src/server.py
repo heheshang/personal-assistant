@@ -121,7 +121,7 @@ async def chat(req: ChatRequest) -> ChatResponse:
         "session_id": session_id,
     }
 
-    result = graph.invoke(
+    result = await graph.ainvoke(
         initial_state,
         config={"configurable": {"thread_id": session_id}},
     )
@@ -132,8 +132,15 @@ async def chat(req: ChatRequest) -> ChatResponse:
     for msg in reversed(messages):
         # Get content from either dict (raw) or message object
         content = msg.content if hasattr(msg, "content") else msg.get("content", "")
-        if content:
+        # Handle content blocks (list of {type, text, ...}) or plain string
+        if isinstance(content, list):
+            for block in content:
+                if isinstance(block, dict) and block.get("type") == "text":
+                    final_content = block.get("text", "")
+                    break
+        elif isinstance(content, str) and content:
             final_content = content
+        if final_content:
             break
 
     return ChatResponse(session_id=session_id, response=final_content)

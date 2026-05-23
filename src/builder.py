@@ -33,10 +33,14 @@ from .state import State
 
 # ── Path functions for conditional edges ────────────────────────────────────
 
-def _route_by(route_to: str | None) -> str:
+def _route_by(state: State | str | None) -> str:
     """
     Path function: maps router's route_to value → target node name.
+
+    Accepts either a State dict (graph calling convention) or a bare
+    route_to string (legacy direct-call interface for tests).
     """
+    route_to = state.get("route_to") if isinstance(state, dict) else state
     if route_to == "rag":
         return "rag_retrieve"
     return "agent"
@@ -117,7 +121,7 @@ def build_graph() -> StateGraph:
     # START conditional: check Redis pending → hitl or memory_retrieve
     builder.add_conditional_edges(
         source="start_check",
-        path_fn=lambda state: _check_pending_start(state.get("session_id", "")),
+        path=lambda state: _check_pending_start(state.get("session_id", "")),
         path_map=["hitl", "memory_retrieve"],
     )
 
@@ -127,7 +131,7 @@ def build_graph() -> StateGraph:
     # Router conditional: rag_retrieve or agent
     builder.add_conditional_edges(
         source="router",
-        path_fn=_route_by,
+        path=_route_by,
         path_map=["rag_retrieve", "agent"],
     )
 
@@ -137,7 +141,7 @@ def build_graph() -> StateGraph:
     # Agent conditional: hitl / tools / memory_save
     builder.add_conditional_edges(
         source="agent",
-        path_fn=_agent_after_call,
+        path=_agent_after_call,
         path_map={"hitl": "hitl", "tools": "tools", "memory_save": "memory_save"},
     )
 
@@ -147,7 +151,7 @@ def build_graph() -> StateGraph:
     # HitL conditional: execute → agent, or skip → memory_save
     builder.add_conditional_edges(
         source="hitl",
-        path_fn=_hitl_after_approval,
+        path=_hitl_after_approval,
         path_map={"agent": "agent", "memory_save": "memory_save"},
     )
 
@@ -167,13 +171,13 @@ def _build_tools_node():
     if _tools_node is not None:
         return _tools_node
 
-    from .tools import build_local_tool_node, build_mcp_tool_node
+    from .tools import get_local_tools, get_mcp_tools
 
-    local_tools = build_local_tool_node()
-    mcp_tools = build_mcp_tool_node()
+    local_tools = get_local_tools()
+    mcp_tools = get_mcp_tools()
 
     # Union both tool lists into one ToolNode
-    all_tools = local_tools.tools + mcp_tools.tools
+    all_tools = local_tools + mcp_tools
     from langgraph.prebuilt import ToolNode
 
     _tools_node = ToolNode(all_tools)

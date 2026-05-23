@@ -72,7 +72,10 @@ async def lifespan(app: FastAPI):
     from .tools.mcp import init_mcp_tools
 
     try:
-        await init_mcp_tools()
+        import asyncio
+        await asyncio.wait_for(init_mcp_tools(), timeout=5.0)
+    except asyncio.TimeoutError:
+        print("[startup] MCP tools warm-up timed out (npx npm timeout), skipping")
     except Exception as e:
         print(f"[startup] MCP tools warm-up skipped: {e}")
 
@@ -175,34 +178,35 @@ async def chat_stream(req: ChatRequest):
     }
 
     async def event_generator():
-        """Stream graph events as SSE data: JSON chunks."""
+        """Stream graph events as SSE data: SSE text strings."""
         async for event in graph.astream_events(
             initial_state,
             config={"configurable": {"thread_id": session_id}},
             stream_mode="messages",
         ):
-            # event is a (substream_key, payload) tuple
-            # payload structure: {"event": "messages", "data": [msg_chunks]}
-            key, payload = event
-            data = payload.get("data", []) if isinstance(payload, dict) else []
+            if not isinstance(event, dict):
+                continue
+            if event.get("event") != "on_chat_model_stream":
+                continue
 
-            for msg_chunk in data:
-                # msg_chunk is a dict like {"content": "...", "type": "..."}
-                if isinstance(msg_chunk, dict) and msg_chunk.get("content"):
-                    yield {
-                        "event": "message",
-                        "data": f'data: {msg_chunk["content"]}\n\n',
-                    }
-                elif hasattr(msg_chunk, "content") and msg_chunk.content:
-                    yield {
-                        "event": "message",
-                        "data": f'data: {msg_chunk.content}\n\n',
-                    }
-            await asyncio.sleep(0)  # yield control to event loop
+            chunk = event.get("data", {}).get("chunk")
+            if not chunk:
+                continue
 
-        yield {"event": "message", "data": "data: [DONE]\n\n"}
+            content = getattr(chunk, "content", []) or []
+            for block in content:
+                if isinstance(block, dict) and block.get("type") == "text":
+                    text = block.get("text", "")
+                    if text:
+                        yield f"data: {text}\n\n"
+            await asyncio.sleep(0)
 
-    return EventSourceResponse(event_generator())
+        yield "data: [DONE]\n\n"
+
+    return EventSourceResponse(
+        event_generator(),
+        media_type="text/event-stream",
+    )
 
 
 @app.get("/health")

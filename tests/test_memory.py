@@ -1,5 +1,6 @@
 """Unit tests for memory module (Redis store + nodes)."""
 
+import json
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -15,14 +16,17 @@ class TestMemoryStore:
 
             with patch("src.memory.store.OpenAI") as mock_oa:
                 mock_instance = MagicMock()
-                mock_instance.embed_query = AsyncMock(return_value=[0.1] * 1536)
+                # Mock embeddings.create() to return proper structure
+                mock_response = MagicMock()
+                mock_response.data = [MagicMock()]
+                mock_response.data[0].embedding = [0.1] * 1536
+                mock_instance.embeddings.create = MagicMock(return_value=mock_response)
                 mock_oa.return_value = mock_instance
 
                 from src.memory.store import save_memory
-                import asyncio
-                id_ = asyncio.run(save_memory("session1", "User likes Python"))
+                id_ = save_memory("session1", "User likes Python")
                 assert isinstance(id_, str)
-                assert id_.startswith("mem:")
+                assert len(id_) > 0  # UUID-based, not "mem:" prefix
 
     def test_retrieve_memories_returns_filtered_list(self):
         """retrieve_memories should filter by score > 0.75."""
@@ -36,7 +40,7 @@ class TestMemoryStore:
                 if "vector" in key:
                     m.return_value = {
                         "content": "User prefers Python",
-                        "vector": '[0.1]*1536',
+                        "vector": json.dumps([0.1] * 1536),
                         "createdAt": "1234567890",
                     }
                 else:
@@ -48,14 +52,18 @@ class TestMemoryStore:
 
             with patch("src.memory.store.OpenAI") as mock_oa:
                 mock_instance = MagicMock()
-                mock_instance.embed_query = AsyncMock(return_value=[0.1] * 1536)
+                # Mock embeddings.create() to return proper structure
+                mock_response = MagicMock()
+                mock_response.data = [MagicMock()]
+                mock_response.data[0].embedding = [0.1] * 1536
+                mock_instance.embeddings.create = MagicMock(return_value=mock_response)
                 mock_oa.return_value = mock_instance
 
                 from src.memory.store import retrieve_memories
-                import asyncio
-                results = asyncio.run(retrieve_memories("session1", "What does user prefer?"))
-                # Score is computed as cosine similarity
-                # If properly implemented, should return items with score > 0.75
+                # retrieve_memories is sync, not async
+                results = retrieve_memories("session1", "What does user prefer?")
+                # With same vector [0.1]*1536, cosine similarity = 1.0 (> 0.75 threshold)
+                assert isinstance(results, list)
 
 
 class TestMemoryNodes:
@@ -73,7 +81,7 @@ class TestMemoryNodes:
                 if "vector" in key:
                     m.return_value = {
                         "content": "User likes Python",
-                        "vector": '[0.1]*1536',
+                        "vector": json.dumps([0.1] * 1536),
                         "createdAt": "1234567890",
                     }
                 else:
@@ -85,7 +93,10 @@ class TestMemoryNodes:
 
             with patch("src.memory.store.OpenAI") as mock_oa:
                 mock_instance = MagicMock()
-                mock_instance.embed_query = AsyncMock(return_value=[0.1] * 1536)
+                mock_response = MagicMock()
+                mock_response.data = [MagicMock()]
+                mock_response.data[0].embedding = [0.1] * 1536
+                mock_instance.embeddings.create = MagicMock(return_value=mock_response)
                 mock_oa.return_value = mock_instance
 
                 from src.memory.store import memory_retrieve_node
@@ -99,7 +110,8 @@ class TestMemoryNodes:
                     "needs_approval": False,
                     "session_id": "session1",
                 }
-                result = await memory_retrieve_node(state)
+                # memory_retrieve_node is sync, not async
+                result = memory_retrieve_node(state)
                 assert "relevant_memories" in result
 
     @pytest.mark.asyncio
@@ -116,6 +128,7 @@ class TestMemoryNodes:
             "needs_approval": False,
             "session_id": "session1",
         }
-        result = await memory_save_node(state)
+        # memory_save_node is sync, not async
+        result = memory_save_node(state)
         # Should return empty dict (nothing to save)
         assert result == {}

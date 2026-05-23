@@ -11,9 +11,10 @@ from langchain_core.messages import HumanMessage
 from langchain_openai import ChatOpenAI
 
 from .config import OPENAI_API_KEY
-from .rag.retriever import build_system_prompt
 from .state import State
-from .tools import build_local_tool_node, build_mcp_tool_node, get_mcp_tools
+
+# Deferred imports: tools are only needed by the agent, not the router.
+# Importing them lazily avoids pulling in langchain_experimental at module load.
 
 
 # ── Router ─────────────────────────────────────────────────────────────────────
@@ -37,18 +38,19 @@ def router(state: State) -> dict[Literal["route_to"], str]:
 
     # MCP / map / geography — 高德地图
     mcp_triggers = [
-        "地图", "导航", "地点", "距离", "路线", "位置",
+        "地图", "导航", "地点", "距离", "路线", "位置", "怎么走",
         "map", "navigate", "directions", "distance", "location",
         "高德", "amap",
     ]
     if any(kw in user_input for kw in mcp_triggers):
         return {"route_to": "mcp"}
 
-    # Code / web search / calculation
+    # Code / web search / calculation / information lookup
     tool_triggers = [
         "代码", "执行", "运行", "计算", "写程序",
-        "search", "查询", "搜索",
-        "code", "execute", "run", "calculate", "python",
+        "搜索", "查询", "天气", "价格", "查一下", "帮我查",
+        "search", "query", "calculate", "code", "execute", "run",
+        "python", "weather", "price",
     ]
     if any(kw in user_input for kw in tool_triggers):
         return {"route_to": "tools"}
@@ -81,6 +83,10 @@ async def agent(state: State) -> dict[str, object]:
     Returns a dict with updated ``messages`` (LangGraph will apply add_messages
     reducer automatically).
     """
+    # Deferred imports — only needed by agent, not router
+    from .rag.retriever import build_system_prompt
+    from .tools import build_local_tool_node, build_mcp_tool_node, get_mcp_tools
+
     # Ensure MCP tools are warmed up (sync accessor — returns cached list)
     get_mcp_tools()
 
@@ -106,6 +112,9 @@ async def agent(state: State) -> dict[str, object]:
     conversation = list(state.get("messages", []))
     conversation.append(HumanMessage(content=state.get("user_input", "")))
 
+    # Sensitive tools that require human approval before execution
+    _sensitive_tools = {"send_email", "delete_data", "transfer_money", "send_message", "delete", "remove"}
+
     # Invoke
     response = await llm_with_tools.ainvoke(
         [
@@ -114,4 +123,12 @@ async def agent(state: State) -> dict[str, object]:
         ]
     )
 
-    return {"messages": [response]}
+    needs_approval = False
+    if hasattr(response, "tool_calls") and response.tool_calls:
+        for tc in response.tool_calls:
+            name = tc.get("name") if isinstance(tc, dict) else getattr(tc, "name", "")
+            if name in _sensitive_tools:
+                needs_approval = True
+                break
+
+    return {"messages": [response], "needs_approval": needs_approval}

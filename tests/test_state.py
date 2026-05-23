@@ -1,7 +1,7 @@
 """Unit tests for state.py (langgraph 1.2.1 State definition)."""
 
 import pytest
-from src.state import State, AssistantState
+from src.state import State
 
 
 class TestStateDefinition:

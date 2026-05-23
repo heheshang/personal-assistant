@@ -1,7 +1,9 @@
 """Unit tests for graph nodes (router + agent)."""
 
-import pytest
+import sys
 from unittest.mock import AsyncMock, MagicMock, patch
+
+import pytest
 
 
 class TestRouterNode:
@@ -92,73 +94,70 @@ class TestRouterNode:
 class TestAgentNode:
     """Test the async agent node."""
 
+    def _make_fake_tools_module(self, tools=None):
+        """Create a fake src.tools module for patching sys.modules."""
+        fake = MagicMock()
+        fake.get_mcp_tools = MagicMock(return_value=tools or [])
+        fake.build_local_tool_node = MagicMock(return_value=MagicMock(tools=[]))
+        fake.build_mcp_tool_node = MagicMock(return_value=MagicMock(tools=[]))
+        return fake
+
     @pytest.mark.asyncio
     async def test_agent_returns_messages(self):
         """agent node must return dict with messages key for add_messages reducer."""
-        with patch("src.nodes.ChatOpenAI") as mock_llm_cls:
-            mock_response = MagicMock()
-            mock_response.content = "Test response from LLM"
-            mock_response.tool_calls = None
+        mock_response = MagicMock()
+        mock_response.content = "Test response from LLM"
+        mock_response.tool_calls = None
 
-            mock_llm = MagicMock()
-            mock_llm.ainvoke = AsyncMock(return_value=mock_response)
-            mock_llm.bind_tools = MagicMock(return_value=mock_llm)
-            mock_llm_cls.return_value = mock_llm
+        mock_llm = MagicMock()
+        mock_llm.ainvoke = AsyncMock(return_value=mock_response)
+        mock_llm.bind_tools = MagicMock(return_value=mock_llm)
 
-            with patch("src.nodes.get_mcp_tools", return_value=[]):
-                with patch("src.nodes.build_local_tool_node") as mock_local:
-                    mock_local.return_value = MagicMock(tools=[])
+        fake_tools = self._make_fake_tools_module()
 
-                    with patch("src.nodes.build_mcp_tool_node") as mock_mcp:
-                        mock_mcp.return_value = MagicMock(tools=[])
+        with patch.dict(sys.modules, {"src.tools": fake_tools}):
+            with patch("src.nodes.ChatOpenAI", return_value=mock_llm):
+                from src.nodes import agent
 
-                        from src.nodes import agent
-
-                        state = {
-                            "messages": [],
-                            "user_input": "Hello",
-                            "route_to": "direct",
-                            "relevant_memories": [],
-                            "retrieved_docs": [],
-                            "needs_approval": False,
-                            "session_id": "s1",
-                        }
-                        result = await agent(state)
-                        assert "messages" in result
+                state = {
+                    "messages": [],
+                    "user_input": "Hello",
+                    "route_to": "direct",
+                    "relevant_memories": [],
+                    "retrieved_docs": [],
+                    "needs_approval": False,
+                    "session_id": "s1",
+                }
+                result = await agent(state)
+                assert "messages" in result
 
     @pytest.mark.asyncio
     async def test_agent_detects_sensitive_tools(self):
         """agent node should set needs_approval=True for sensitive tools."""
-        with patch("src.nodes.ChatOpenAI") as mock_llm_cls:
-            # Simulate LLM response with a sensitive tool call
-            mock_response = MagicMock()
-            mock_response.content = ""
-            mock_response.tool_calls = [
-                {"name": "send_email", "args": {"to": "x@y.com", "body": "hi"}, "id": "call_1"}
-            ]
+        mock_response = MagicMock()
+        mock_response.content = ""
+        mock_response.tool_calls = [
+            {"name": "send_email", "args": {"to": "x@y.com", "body": "hi"}, "id": "call_1"}
+        ]
 
-            mock_llm = MagicMock()
-            mock_llm.ainvoke = AsyncMock(return_value=mock_response)
-            mock_llm.bind_tools = MagicMock(return_value=mock_llm)
-            mock_llm_cls.return_value = mock_llm
+        mock_llm = MagicMock()
+        mock_llm.ainvoke = AsyncMock(return_value=mock_response)
+        mock_llm.bind_tools = MagicMock(return_value=mock_llm)
 
-            with patch("src.nodes.get_mcp_tools", return_value=[]):
-                with patch("src.nodes.build_local_tool_node") as mock_local:
-                    mock_local.return_value = MagicMock(tools=[])
+        fake_tools = self._make_fake_tools_module()
 
-                    with patch("src.nodes.build_mcp_tool_node") as mock_mcp:
-                        mock_mcp.return_value = MagicMock(tools=[])
+        with patch.dict(sys.modules, {"src.tools": fake_tools}):
+            with patch("src.nodes.ChatOpenAI", return_value=mock_llm):
+                from src.nodes import agent
 
-                        from src.nodes import agent
-
-                        state = {
-                            "messages": [],
-                            "user_input": "Send email to x@y.com",
-                            "route_to": "tools",
-                            "relevant_memories": [],
-                            "retrieved_docs": [],
-                            "needs_approval": False,
-                            "session_id": "s1",
-                        }
-                        result = await agent(state)
-                        assert result.get("needs_approval") is True
+                state = {
+                    "messages": [],
+                    "user_input": "Send email to x@y.com",
+                    "route_to": "tools",
+                    "relevant_memories": [],
+                    "retrieved_docs": [],
+                    "needs_approval": False,
+                    "session_id": "s1",
+                }
+                result = await agent(state)
+                assert result.get("needs_approval") is True

@@ -1,8 +1,6 @@
 # PersonalAssistant
 
-> 用 Python LangGraph 1.2.1 复刻 James 的 RAG + Memory + MCP 架构，来自一篇中文技术实战文章。
-
-**参考文章：**《我是怎么把 RAG、Memory、MCP 拼进同一个 LangGraph 的》
+> 用 Python LangGraph 1.2.1 RAG + Memory + MCP 架构
 
 ## 技术栈
 

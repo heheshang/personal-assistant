@@ -1,8 +1,50 @@
+# Python
 __pycache__/
-*.pyc
+*.py[cod]
 *.pyo
-.pytest_cache/
 *.egg-info/
 dist/
 build/
+.venv/
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+*.cover
+
+# Environments
 .env
+.env.local
+.env.*.local
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# LangGraph / state
+*.jsonl
+!examples/*.jsonl
+
+# Logs
+*.log
+logs/
+
+# Docker
+docker-compose.override.yml
+
+# Milvus / vector data
+milvus_data/
+
+# MinIO data
+minio_data/
+
+# etcd data
+etcd_data/

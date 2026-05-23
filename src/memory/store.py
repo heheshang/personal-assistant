@@ -4,7 +4,7 @@ Memory module using Redis for storage with OpenAI embeddings for vector search.
 
 import json
 import uuid
-from typing import Optional
+from typing import Annotated, Any, Optional
 
 import numpy as np
 import redis
@@ -25,18 +25,27 @@ SIMILARITY_THRESHOLD = 0.75
 MEMORY_HASH_PREFIX = "memory:session:"
 VECTOR_KEY_PREFIX = "memory:vector:"
 
+# Module-level singletons
+_redis_client: redis.Redis | None = None
+_openai_client: OpenAI | None = None
+
 
 def _get_redis_client() -> redis.Redis:
-    """Get Redis client instance."""
-    return redis.Redis(
-        host=REDIS_HOST, port=REDIS_PORT, db=REDIS_DB, decode_responses=True
-    )
+    """Get Redis client singleton."""
+    global _redis_client
+    if _redis_client is None:
+        _redis_client = redis.Redis(
+            host=REDIS_HOST, port=REDIS_PORT, db=REDIS_DB, decode_responses=True
+        )
+    return _redis_client
 
 
 def _get_embedding(text: str) -> list[float]:
     """Get embedding vector for text using OpenAI embeddings."""
-    client = OpenAI(api_key=OPENAI_API_KEY)
-    response = client.embeddings.create(
+    global _openai_client
+    if _openai_client is None:
+        _openai_client = OpenAI(api_key=OPENAI_API_KEY)
+    response = _openai_client.embeddings.create(
         model=EMBEDDING_MODEL,
         input=text,
         dimensions=EMBEDDING_DIMENSIONS,

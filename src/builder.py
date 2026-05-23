@@ -119,7 +119,12 @@ def _build_tools_node():
 
     Combines local tools (web_search, code_executor) with warmed-up MCP tools.
     Must be called after MCP singleton has been initialized.
+    Cached after first call to avoid repeated ToolNode reconstructions.
     """
+    global _tools_node
+    if _tools_node is not None:
+        return _tools_node
+
     from .tools import build_local_tool_node, build_mcp_tool_node
 
     local_tools = build_local_tool_node()
@@ -129,11 +134,13 @@ def _build_tools_node():
     all_tools = local_tools.tools + mcp_tools.tools
     from langgraph.prebuilt import ToolNode
 
-    return ToolNode(all_tools)
+    _tools_node = ToolNode(all_tools)
+    return _tools_node
 
 
 # Module-level singleton
 _graph = None
+_tools_node = None  # cached ToolNode to avoid repeated reconstructions
 
 
 def get_graph() -> StateGraph:

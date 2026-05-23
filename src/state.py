@@ -17,9 +17,11 @@ class State(TypedDict):
     # User's current input string
     user_input: str
     # Routing decision written by router node, read by conditional edges
-    route_to: Literal["rag", "tools", "mcp", "direct"] | None
+    # str covers dynamically named tool destinations from agents
+    route_to: Literal["rag", "tools", "mcp", "direct"] | str | None
     # Retrieved long-term memories (from Redis vector search)
-    relevant_memories: list[str]
+    # Each dict has: id, content, score/createdAt
+    relevant_memories: list[dict]
     # Retrieved documents from Milvus RAG
     retrieved_docs: list[dict]
     # When True, triggers Human-in-the-Loop approval before tool execution

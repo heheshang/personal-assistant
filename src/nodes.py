@@ -92,15 +92,34 @@ async def agent(state: State) -> dict[str, object]:
     # Build system prompt with memories + RAG docs
     system_message = build_system_prompt(state)
 
-    # LLM — MiniMax Anthropic-compatible endpoint
-    from langchain_anthropic import ChatAnthropic
+    # LLM — DeepSeek (优先) 或 MiniMax Anthropic-compatible endpoint
+    from src.config import DEEPSEEK_API_KEY, DEEPSEEK_BASE_URL, DEEPSEEK_MODEL
 
-    llm = ChatAnthropic(
-        model=ANTHROPIC_MODEL,
-        api_key=ANTHROPIC_AUTH_TOKEN,
-        base_url=ANTHROPIC_BASE_URL,
-        temperature=0.7,
-    )
+    if DEEPSEEK_API_KEY:
+        from langchain_openai import ChatOpenAI
+        from src.config import DEEPSEEK_THINKING
+
+        llm_kwargs = {
+            "model": DEEPSEEK_MODEL,
+            "api_key": DEEPSEEK_API_KEY,
+            "base_url": DEEPSEEK_BASE_URL,
+            "temperature": 0.7,
+        }
+        if DEEPSEEK_THINKING:
+            llm_kwargs["extra_body"] = {"thinking": {"type": "enabled", "budget_tokens": 1000}}
+
+        llm = ChatOpenAI(**llm_kwargs)
+    else:
+        from langchain_anthropic import ChatAnthropic
+        from src.config import ANTHROPIC_AUTH_TOKEN, ANTHROPIC_BASE_URL, ANTHROPIC_MODEL
+
+        llm = ChatAnthropic(
+            model=ANTHROPIC_MODEL,
+            api_key=ANTHROPIC_AUTH_TOKEN,
+            base_url=ANTHROPIC_BASE_URL,
+            temperature=0.7,
+        )
+
     llm_with_tools = llm.bind_tools(all_tools)
 
     # Existing messages + new user input
@@ -139,5 +158,10 @@ async def agent(state: State) -> dict[str, object]:
             "user_input": state.get("user_input", ""),
             "approved": None,
         })
+        return {
+            "messages": [response],
+            "needs_approval": True,
+            "pending_approval": {**pending_tool_call, "approved": None},
+        }
 
-    return {"messages": [response], "needs_approval": needs_approval}
+    return {"messages": [response], "needs_approval": False}

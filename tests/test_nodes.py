@@ -147,7 +147,7 @@ class TestAgentNode:
         fake_tools = self._make_fake_tools_module()
 
         with patch.dict(sys.modules, {"src.tools": fake_tools}):
-            with patch("langchain_anthropic.ChatAnthropic", return_value=mock_llm):
+            with patch("langchain_openai.ChatOpenAI", return_value=mock_llm):
                 from src.nodes import agent
 
                 state = {

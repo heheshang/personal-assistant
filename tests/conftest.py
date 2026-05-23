@@ -32,12 +32,12 @@ def mock_openai_embeddings():
         yield instance
 
 
-# ── Mock Milvus ──────────────────────────────────────────────────────────────
+# ── Mock Qdrant ───────────────────────────────────────────────────────────────
 
 @pytest.fixture
-def mock_milvus():
-    """Mock Milvus vector store for RAG module tests."""
-    with patch("src.rag.retriever.Milvus") as mock:
+def mock_qdrant():
+    """Mock Qdrant vector store for RAG module tests."""
+    with patch("src.rag.retriever.Qdrant") as mock:
         instance = MagicMock()
         instance.similarity_search_with_score = AsyncMock(return_value=[
             (
@@ -53,7 +53,7 @@ def mock_milvus():
                 0.55,  # below 0.7 threshold
             ),
         ])
-        mock.from_existing_collection = AsyncMock(return_value=instance)
+        mock.from_existing_collection = MagicMock(return_value=instance)
         yield instance
 
 

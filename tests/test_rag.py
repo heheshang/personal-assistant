@@ -1,4 +1,4 @@
-"""Unit tests for RAG module (Milvus retriever + build_system_prompt)."""
+"""Unit tests for RAG module (Qdrant retriever + build_system_prompt)."""
 
 import pytest
 from unittest.mock import MagicMock, patch
@@ -8,10 +8,10 @@ from src.rag import retriever
 
 
 class TestRetrieveDocs:
-    """Test Milvus document retrieval."""
+    """Test Qdrant document retrieval."""
 
     def _make_mock_store(self, results):
-        """Create a mock Milvus store with given search results."""
+        """Create a mock Qdrant store with given search results."""
         mock_instance = MagicMock()
         mock_instance.similarity_search_with_score = MagicMock(return_value=results)
         return mock_instance

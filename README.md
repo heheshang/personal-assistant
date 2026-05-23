@@ -10,7 +10,7 @@
 |------|------|------|
 | LLM | `langchain-anthropic` (MiniMax-M2.7) | 统一语言模型 |
 | 编排 | `langgraph 1.2.1` StateGraph | 节点调度、Conditional Edge、Checkpoint |
-| RAG | `langchain-milvus` + Milvus | 知识库检索，score > 0.7 过滤 |
+| RAG | `langchain-qdrant` + Qdrant | 知识库检索，score > 0.7 过滤 |
 | Memory | Redis + OpenAI Embeddings | 长期记忆，向量相似度 0.75 |
 | Tools | `@tool` DynamicStructuredTool | 本地工具（搜索、代码执行） |
 | MCP | `langchain-mcp-adapters` | 外部服务（高德地图） |
@@ -56,7 +56,7 @@
                                      │            │
                     ┌───────────────▼─┐    ┌──────▼──────────┐
                     │  rag_retrieve    │    │     agent       │
-                    │  Milvus RAG     │    │  LLM + Tools    │
+                    │  Qdrant RAG     │    │  LLM + Tools    │
                     └────────┬────────┘    └───────┬──────────┘
                              │                     │
                              └─────────┬───────────┘
@@ -93,7 +93,7 @@
 | `hitl` | `hitl.py` | 审批处理器：pending 等待 / 执行工具 / 拒绝 |
 | `memory_retrieve` | `memory/store.py` | Redis 向量检索相关记忆 |
 | `router` | `nodes.py` | LLM 意图分类（rag / tools / direct） |
-| `rag_retrieve` | `rag/retriever.py` | Milvus 知识库检索 |
+| `rag_retrieve` | `rag/retriever.py` | Qdrant 知识库检索 |
 | `agent` | `nodes.py` | LLM 对话 + 工具调用（敏感工具写入 pending_approval） |
 | `tools` | `builder.py` ToolNode | 执行 web_search / code_executor |
 | `memory_save` | `memory/store.py` | 存入 Redis 长期记忆 |
@@ -103,7 +103,7 @@
 ```
 personal-assistant/
 ├── src/
-│   ├── config.py          # 环境变量（MINIMAX_*, REDIS_*, MILVUS_*, ANTHROPIC_*）
+│   ├── config.py          # 环境变量（MINIMAX_*, REDIS_*, QDRANT_*, ANTHROPIC_*）
 │   ├── state.py           # TypedDict State — langgraph 1.2.1 格式
 │   ├── nodes.py           # router（sync）+ agent（async）
 │   ├── builder.py         # StateGraph 组装 + conditional edges
@@ -113,13 +113,13 @@ personal-assistant/
 │   │   ├── store.py       # Redis 向量记忆 + SKIP_EMBEDDING=true 可跳过
 │   │   └── __init__.py
 │   ├── rag/
-│   │   ├── retriever.py   # Milvus 检索 + build_system_prompt
+│   │   ├── retriever.py   # Qdrant 检索 + build_system_prompt
 │   │   └── __init__.py
 │   └── tools/
 │       ├── local.py       # @tool web_search + code_executor
 │       ├── mcp.py         # langchain-mcp-adapters 单例（MCP 超时 5 秒）
 │       └── __init__.py
-├── tests/                 # 单元测试（Mock Redis/Milvus/LLM）
+├── tests/                 # 单元测试（Mock Redis/Qdrant/LLM）
 ├── api.http               # HTTP 测试用例（VS Code REST Client）
 ├── requirements.txt
 ├── .env.example
@@ -150,8 +150,8 @@ REDIS_PORT=6379
 REDIS_DB=0
 
 # RAG 知识库（可选）
-MILVUS_URI=http://localhost:19530
-MILVUS_COLLECTION=knowledge_base
+QDRANT_URI=http://localhost:6333
+QDRANT_COLLECTION=knowledge_base
 
 # Web 搜索（可选）
 TAVILY_API_KEY=...
@@ -433,5 +433,5 @@ LangGraph 1.2.1 没有 `Command(suspend=True)`，所以用 Redis 作为两次 HT
 
 - Python 3.10+
 - Redis（长期记忆 + HitL 协调）
-- Milvus（RAG 知识库，可选）
+- Qdrant（RAG 知识库，可选）
 - MiniMax API Key（`ANTHROPIC_AUTH_TOKEN`）

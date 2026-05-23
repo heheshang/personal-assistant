@@ -1,16 +1,16 @@
-"""RAG retriever module using Milvus vector database (langchain-milvus 0.3.x)."""
+"""RAG retriever module using Qdrant vector database (langchain-qdrant 1.1.x)."""
 
 import os
-from typing import Annotated, Any, Literal
+from typing import Any
 
-from langchain_milvus import Milvus
 from langchain_openai import OpenAIEmbeddings
+from langchain_qdrant import Qdrant
 
 from ..state import State
 
-# ── Config (reads from env directly to avoid circular imports) ────────────────
-MILVUS_URI: str = os.getenv("MILVUS_URI", "http://localhost:19530")
-MILVUS_COLLECTION: str = os.getenv("MILVUS_COLLECTION", "personal_assistant_kb")
+# ── Config (reads from env directly to avoid circular imports) ───────────────
+QDRANT_URI: str = os.getenv("QDRANT_URI", "http://localhost:6333")
+QDRANT_COLLECTION: str = os.getenv("QDRANT_COLLECTION", "personal_assistant_kb")
 EMBEDDING_MODEL: str = os.getenv("EMBEDDING_MODEL", "text-embedding-3-small")
 EMBEDDING_DIMENSIONS: int = int(os.getenv("EMBEDDING_DIMENSIONS", "1536"))
 
@@ -21,24 +21,24 @@ def _get_embedding_model() -> OpenAIEmbeddings:
 
 
 # Module-level singleton
-_vector_store: Milvus | None = None
+_vector_store: Qdrant | None = None
 
 
-def _get_vector_store() -> Milvus:
-    """Get or create Milvus vector store singleton."""
+def _get_vector_store() -> Qdrant:
+    """Get or create Qdrant vector store singleton."""
     global _vector_store
     if _vector_store is None:
-        _vector_store = Milvus.from_existing_collection(
+        _vector_store = Qdrant.from_existing_collection(
             embedding=_get_embedding_model(),
-            collection_name=MILVUS_COLLECTION,
-            connection_args={"uri": MILVUS_URI},
+            collection_name=QDRANT_COLLECTION,
+            location=QDRANT_URI,
         )
     return _vector_store
 
 
 def retrieve_docs(query: str, topK: int = 4) -> list[dict[str, Any]]:
     """
-    Retrieve documents from Milvus with similarity score > 0.7.
+    Retrieve documents from Qdrant with similarity score > 0.7.
 
     Args:
         query: Search query string.

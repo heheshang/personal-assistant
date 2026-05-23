@@ -23,8 +23,8 @@ DEEPSEEK_MODEL: str = os.getenv("DEEPSEEK_MODEL", "deepseek/deepseek-v4-flash")
 DEEPSEEK_THINKING: bool = os.getenv("DEEPSEEK_THINKING", "false").lower() in ("true", "1", "yes")
 
 # ── Vector stores ────────────────────────────────────────────────────────────
-MILVUS_URI: str = os.getenv("MILVUS_URI", "http://localhost:19530")
-MILVUS_COLLECTION: str = os.getenv("MILVUS_COLLECTION", "personal_assistant_kb")
+QDRANT_URI: str = os.getenv("QDRANT_URI", "http://localhost:6333")
+QDRANT_COLLECTION: str = os.getenv("QDRANT_COLLECTION", "personal_assistant_kb")
 
 # ── Memory ───────────────────────────────────────────────────────────────────
 REDIS_URL: str = os.getenv("REDIS_URL", "redis://localhost:6379")

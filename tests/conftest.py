@@ -61,8 +61,8 @@ def mock_milvus():
 
 @pytest.fixture
 def mock_llm():
-    """Mock ChatOpenAI for agent node tests."""
-    with patch("src.nodes.ChatOpenAI") as mock:
+    """Mock ChatAnthropic (MiniMax) for agent node tests."""
+    with patch("langchain_anthropic.ChatAnthropic") as mock:
         instance = MagicMock()
         response = MagicMock()
         response.content = "Mocked LLM response"

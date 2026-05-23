@@ -10,7 +10,10 @@ if ENV_PATH.exists():
     load_dotenv(ENV_PATH)
 
 
-# ── LLM ───────────────────────────────────────────────────────────────────────
+# ── LLM (Anthropic / MiniMax) ───────────────────────────────────────────────
+ANTHROPIC_BASE_URL: str = os.getenv("ANTHROPIC_BASE_URL", "https://api.minimaxi.com/anthropic")
+ANTHROPIC_AUTH_TOKEN: str = os.getenv("ANTHROPIC_AUTH_TOKEN", "")
+ANTHROPIC_MODEL: str = os.getenv("ANTHROPIC_MODEL", "MiniMax-M2.7")
 OPENAI_API_KEY: str = os.getenv("OPENAI_API_KEY", "")
 
 # ── Vector stores ────────────────────────────────────────────────────────────

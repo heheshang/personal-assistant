@@ -8,9 +8,8 @@
 from typing import Literal
 
 from langchain_core.messages import HumanMessage
-from langchain_openai import ChatOpenAI
 
-from .config import OPENAI_API_KEY
+from .config import ANTHROPIC_AUTH_TOKEN, ANTHROPIC_BASE_URL, ANTHROPIC_MODEL
 from .state import State
 
 # Deferred imports: tools are only needed by the agent, not the router.
@@ -100,10 +99,13 @@ async def agent(state: State) -> dict[str, object]:
     # Build system prompt with memories + RAG docs
     system_message = build_system_prompt(state)
 
-    # LLM
-    llm = ChatOpenAI(
-        model="gpt-4o-mini",
-        api_key=OPENAI_API_KEY,
+    # LLM — MiniMax Anthropic-compatible endpoint
+    from langchain_anthropic import ChatAnthropic
+
+    llm = ChatAnthropic(
+        model=ANTHROPIC_MODEL,
+        api_key=ANTHROPIC_AUTH_TOKEN,
+        base_url=ANTHROPIC_BASE_URL,
         temperature=0.7,
     )
     llm_with_tools = llm.bind_tools(all_tools)

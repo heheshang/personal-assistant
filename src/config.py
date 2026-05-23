@@ -10,11 +10,17 @@ if ENV_PATH.exists():
     load_dotenv(ENV_PATH)
 
 
-# ── LLM (Anthropic / MiniMax) ───────────────────────────────────────────────
+# ── LLM (Anthropic / MiniMax / OpenAI / DeepSeek) ─────────────────────────
 ANTHROPIC_BASE_URL: str = os.getenv("ANTHROPIC_BASE_URL", "https://api.minimaxi.com/anthropic")
 ANTHROPIC_AUTH_TOKEN: str = os.getenv("ANTHROPIC_AUTH_TOKEN", "")
 ANTHROPIC_MODEL: str = os.getenv("ANTHROPIC_MODEL", "MiniMax-M2.7")
 OPENAI_API_KEY: str = os.getenv("OPENAI_API_KEY", "")
+
+# DeepSeek（切换时设置 DEEPSEEK_API_KEY）
+DEEPSEEK_API_KEY: str = os.getenv("DEEPSEEK_API_KEY", "")
+DEEPSEEK_BASE_URL: str = os.getenv("DEEPSEEK_BASE_URL", "https://api.deepseek.com")
+DEEPSEEK_MODEL: str = os.getenv("DEEPSEEK_MODEL", "deepseek/deepseek-v4-flash")
+DEEPSEEK_THINKING: bool = os.getenv("DEEPSEEK_THINKING", "false").lower() in ("true", "1", "yes")
 
 # ── Vector stores ────────────────────────────────────────────────────────────
 MILVUS_URI: str = os.getenv("MILVUS_URI", "http://localhost:19530")

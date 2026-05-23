@@ -73,15 +73,19 @@ def clear_pending(session_id: str) -> None:
 
 # ── START conditional — check Redis for pending approval ──────────────────────
 
-def _check_pending_start(session_id: str) -> str:
+def _check_pending_start(state: State) -> str:
     """
-    Path function for the START → hitl | memory_retrieve edge.
+    Path function: START → hitl or memory_retrieve.
 
-    Checks Redis for a pending HitL approval for this session.
-    Returns 'hitl' if approval record exists, 'memory_retrieve' otherwise.
+    On first call: pending_approval=None → memory_retrieve (normal flow)
+    On second call (post-approval): Redis has pending record with approved=True/False
+      → hitl to process the approval.
     """
+    session_id = state.get("session_id", "")
     if not session_id:
         return "memory_retrieve"
+
+    # Check Redis for a pending approval record
     record = get_pending(session_id)
     if record and record.get("approved") is not None:
         return "hitl"
@@ -107,23 +111,27 @@ def hitl_node(state: State) -> dict:
     record = get_pending(session_id)
 
     if not record:
-        # No pending record — treat as normal continuation
-        return {"needs_approval": False}
+        # No pending record — this node was entered in error (e.g. from agent
+        # after a non-sensitive tool call). Preserve state and exit.
+        return {}
 
     approved = record.get("approved")
     tool_name = record.get("tool_name", "")
     tool_args = record.get("args", {})
     tool_call_id = record.get("tool_call_id", "")
 
-    # Clear pending immediately — one-shot
-    clear_pending(session_id)
+    if approved is None:
+        # First call: pending not yet approved — keep in Redis, signal wait to user
+        return {
+            "needs_approval": True,
+            "pending_approval": None,
+        }
 
     if approved is True and tool_name:
-        # Execute the approved tool
+        # Second call (post-approval): execute the approved tool
         tool_result = _execute_tool(tool_name, tool_args)
-        from langchain_core.messages import AIMessage, ToolMessage
+        from langchain_core.messages import ToolMessage
 
-        # Build the tool-result message that would normally come from ToolNode
         tool_msg = ToolMessage(
             content=str(tool_result),
             tool_call_id=tool_call_id,
@@ -131,24 +139,23 @@ def hitl_node(state: State) -> dict:
         )
         return {
             "needs_approval": False,
+            "pending_approval": None,
             "messages": [tool_msg],
         }
     else:
-        # Rejected or not-yet-decided — skip tool, continue to memory_save
-        return {"needs_approval": False}
+        # Rejected — skip tool, clear pending_approval
+        return {"needs_approval": False, "pending_approval": None}
 
 
 def _execute_tool(tool_name: str, tool_args: dict) -> str:
     """Execute a single tool by name with arguments. Returns result string."""
     try:
-        from .tools import get_mcp_tools, build_local_tool_node, build_mcp_tool_node
+        from .tools import get_local_tools, get_mcp_tools
 
         # Collect all available tools (same union as builder._build_tools_node)
-        local_node = build_local_tool_node()
-        mcp_node = build_mcp_tool_node()
-        all_tools = local_node.tools + mcp_node.tools
+        all_tools = get_local_tools() + get_mcp_tools()
 
-        # Find the tool
+        # Find the tool by name
         tool = None
         for t in all_tools:
             if getattr(t, "name", None) == tool_name:
@@ -171,16 +178,16 @@ def _hitl_after_approval(state: State) -> str:
     """
     Path function: after hitl_node processes approval decision.
 
-    - If needs_approval=False and tool was executed (messages updated) → 'agent'
-    - Otherwise → 'memory_save'
+    After hitl_node runs:
+    - If tool was executed (ToolMessage in messages) → 'memory_save' (end flow)
+    - If rejected or no pending → 'memory_save' (end flow)
     """
-    needs_approval = state.get("needs_approval", True)
-    if needs_approval:
-        return "memory_save"
-
     messages: list = state.get("messages", [])
     last = messages[-1] if messages else None
-    # If last message is a ToolMessage, tool was executed → go to agent
+
+    # Tool executed → save to memory and end
     if last and hasattr(last, "type") and getattr(last, "type", None) == "tool":
-        return "agent"
+        return "memory_save"
+
+    # No tool result → save and end
     return "memory_save"

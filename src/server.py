@@ -129,6 +129,14 @@ async def chat(req: ChatRequest) -> ChatResponse:
         config={"configurable": {"thread_id": session_id}},
     )
 
+    # Extract final response from result state
+    needs_approval = result.get("needs_approval", False)
+    if needs_approval:
+        return ChatResponse(
+            session_id=session_id,
+            response="[等待审批] 敏感操作需您确认，请调用 POST /approvals/{session_id} 进行审批",
+        )
+
     # Extract final AIMessage content
     messages: list = result.get("messages", [])
     final_content = ""
@@ -145,6 +153,9 @@ async def chat(req: ChatRequest) -> ChatResponse:
             final_content = content
         if final_content:
             break
+
+    if not final_content:
+        final_content = "[无响应]"
 
     return ChatResponse(session_id=session_id, response=final_content)
 
@@ -245,7 +256,7 @@ async def handle_approval(session_id: str, req: ApprovalRequest):
     On approve: sets approved=True in Redis record, then calls /chat to resume.
     On reject: sets approved=False, then calls /chat to cancel tool.
     """
-    from .hitl import get_pending, store_pending
+    from .hitl import get_pending, store_pending, clear_pending, _execute_tool
 
     record = get_pending(session_id)
     if record is None:
@@ -265,42 +276,12 @@ async def handle_approval(session_id: str, req: ApprovalRequest):
     record["approved"] = action == "approve"
     store_pending(session_id, record)
 
-    # Now invoke /chat to continue the graph with the updated Redis state
-    from .hitl import get_pending as gp  # refresh after store_pending
-    from langchain_core.messages import HumanMessage
+    if action != "approve":
+        clear_pending(session_id)
+        return ApprovalResponse(status="rejected", message="Tool execution cancelled")
 
-    _ = gp(session_id)  # ensure fresh read
+    # Execute the approved tool directly (bypass full graph to avoid LLM re-invocation)
+    tool_result = _execute_tool(record["tool_name"], record["args"])
+    clear_pending(session_id)
 
-    graph = get_graph()
-    initial_state: State = {
-        "messages": [HumanMessage(content="[approval_resume]")],
-        "user_input": "[approval_resume]",
-        "route_to": None,
-        "relevant_memories": [],
-        "retrieved_docs": [],
-        "needs_approval": False,
-        "pending_approval": None,
-        "session_id": session_id,
-    }
-
-    try:
-        result = await graph.ainvoke(
-            initial_state,
-            config={"configurable": {"thread_id": session_id}},
-        )
-        messages: list = result.get("messages", [])
-        final_content = ""
-        for msg in reversed(messages):
-            content = msg.content if hasattr(msg, "content") else msg.get("content", "")
-            if content:
-                final_content = content
-                break
-        return ApprovalResponse(
-            status="approved" if action == "approve" else "rejected",
-            message=final_content,
-        )
-    except Exception as e:
-        return ApprovalResponse(
-            status="error",
-            message=f"Graph invocation failed: {e}",
-        )
+    return ApprovalResponse(status="approved", message=str(tool_result))

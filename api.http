@@ -1,0 +1,187 @@
+@baseUrl=http://localhost:8000
+
+###############################################################################
+# PersonalAssistant API - Full Test Suite
+###############################################################################
+
+### [1] Health Check
+GET {{baseUrl}}/health
+
+> {%
+    client.test("GET /health -> 200", function() {
+        if (status !== 200) throw new Error("Expected 200, got " + status);
+    });
+    client.test("Response {status:ok}", function() {
+        const body = JSON.parse(response.body);
+        if (body.status !== "ok") throw new Error(JSON.stringify(body));
+    });
+%}
+
+
+### [2] Chat - New Session (non-streaming)
+POST {{baseUrl}}/chat
+Content-Type: application/json
+
+{"message": "hello"}
+
+
+### [3] Chat - Continue Existing Session
+POST {{baseUrl}}/chat
+Content-Type: application/json
+
+{"message": "my name is zhangsan", "session_id": "existing-session-001"}
+
+
+### [4] Chat Stream - New Session
+POST {{baseUrl}}/chat/stream
+Content-Type: application/json
+
+{"message": "count to 3"}
+
+
+### [5] Chat Stream - Continue Session
+POST {{baseUrl}}/chat/stream
+Content-Type: application/json
+
+{"message": "what is my name", "session_id": "existing-session-001"}
+
+
+### [6] Chat - Empty Message (validation error expected)
+POST {{baseUrl}}/chat
+Content-Type: application/json
+
+{"message": ""}
+
+
+### [7] Chat - Missing Field (validation error expected)
+POST {{baseUrl}}/chat
+Content-Type: application/json
+
+{}
+
+
+### [8] Chat - Chinese Input
+POST {{baseUrl}}/chat
+Content-Type: application/json
+
+{"message": "你好，介绍一下你自己"}
+
+
+### [9] Chat Stream - Chinese Input
+POST {{baseUrl}}/chat/stream
+Content-Type: application/json
+
+{"message": "用一句话介绍自己"}
+
+
+### [10] Get Approval - Session Not Found (returns null)
+GET {{baseUrl}}/approvals/00000000-0000-0000-0000-000000000000
+
+
+### [11] Get Approval - Random Session ID (returns null)
+GET {{baseUrl}}/approvals/random-session-xyz
+
+
+### [12] Approve - No Pending (error response)
+POST {{baseUrl}}/approvals/no-pending-session
+Content-Type: application/json
+
+{"action": "approve"}
+
+
+### [13] Reject - No Pending (error response)
+POST {{baseUrl}}/approvals/no-pending-session
+Content-Type: application/json
+
+{"action": "reject"}
+
+
+### [14] Approve - Invalid Action
+POST {{baseUrl}}/approvals/any-session
+Content-Type: application/json
+
+{"action": "invalid_action"}
+
+
+### [15] Approve - With Comment
+POST {{baseUrl}}/approvals/any-session
+Content-Type: application/json
+
+{"action": "approve", "comment": "confirmed by user"}
+
+
+### [16] HitL Flow - Trigger (model calls sensitive tool)
+### NOTE: If model does NOT call a sensitive tool, pending stays null (model behavior)
+POST {{baseUrl}}/chat
+Content-Type: application/json
+
+{"message": "execute python code: print(1+1)", "session_id": "hitl-session-001"}
+
+
+### [17] HitL Flow - Query Pending
+GET {{baseUrl}}/approvals/hitl-session-001
+
+
+### [18] HitL Flow - Approve
+POST {{baseUrl}}/approvals/hitl-session-001
+Content-Type: application/json
+
+{"action": "approve", "comment": "approved"}
+
+
+### [19] HitL Flow - Verify Cleared
+GET {{baseUrl}}/approvals/hitl-session-001
+
+
+### [20] HitL Flow - Reject
+POST {{baseUrl}}/chat
+Content-Type: application/json
+
+{"message": "execute python code: print('rejected')", "session_id": "hitl-session-002"}
+
+
+### [21] HitL Flow - Query Then Reject
+GET {{baseUrl}}/approvals/hitl-session-002
+POST {{baseUrl}}/approvals/hitl-session-002
+Content-Type: application/json
+
+{"action": "reject", "comment": "rejected by user"}
+
+
+### [22] Multiple Sessions in Parallel
+# Session A
+POST {{baseUrl}}/chat
+Content-Type: application/json
+
+{"message": "session A", "session_id": "multi-session-A"}
+
+# Session B
+POST {{baseUrl}}/chat
+Content-Type: application/json
+
+{"message": "session B", "session_id": "multi-session-B"}
+
+# Session C
+POST {{baseUrl}}/chat
+Content-Type: application/json
+
+{"message": "session C", "session_id": "multi-session-C"}
+
+
+### [23] Verify Sessions Are Isolated
+GET {{baseUrl}}/approvals/multi-session-A
+GET {{baseUrl}}/approvals/multi-session-B
+GET {{baseUrl}}/approvals/multi-session-C
+
+
+### [24] Curl Template - SSE Streaming
+# Run this in terminal:
+# curl -N -X POST http://localhost:8000/chat/stream \
+#      -H "Content-Type: application/json" \
+#      -d '{"message": "count to 5"}'
+#
+# Expected SSE format:
+#   data: 你
+#   data: 好
+#   data: ...
+#   data: [DONE]

@@ -43,6 +43,8 @@ def _route_by(state: State | str | None) -> str:
     route_to = state.get("route_to") if isinstance(state, dict) else state
     if route_to == "rag":
         return "rag_retrieve"
+    if route_to in ("tools", "mcp", "direct"):
+        return "agent"
     return "agent"
 
 
@@ -69,16 +71,17 @@ def _agent_after_call(state: State) -> str:
 
 def _hitl_after_approval(state: State) -> str:
     """
-    Path function: after hitl_node processes approval.
+    Path function: after hitl_node processes approval decision.
 
-    - If tool was executed (last message is ToolMessage) → agent
-    - Otherwise → memory_save
+    After hitl_node runs, pending_approval is always None (cleared).
+    - If last message is ToolMessage (tool executed post-approval) → 'agent'
+    - Otherwise → 'memory_save' (don't loop)
     """
     messages: list = state.get("messages", [])
-    if not messages:
-        return "memory_save"
-    last = messages[-1]
-    if hasattr(last, "type") and getattr(last, "type", None) == "tool":
+    last = messages[-1] if messages else None
+
+    # Tool executed → synthesize result
+    if last and hasattr(last, "type") and getattr(last, "type", None) == "tool":
         return "agent"
     return "memory_save"
 
@@ -121,7 +124,7 @@ def build_graph() -> StateGraph:
     # START conditional: check Redis pending → hitl or memory_retrieve
     builder.add_conditional_edges(
         source="start_check",
-        path=lambda state: _check_pending_start(state.get("session_id", "")),
+        path=_check_pending_start,
         path_map=["hitl", "memory_retrieve"],
     )
 
